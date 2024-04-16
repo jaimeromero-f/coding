@@ -1,0 +1,690 @@
+---
+title: "Project 7"
+author: "Jaime Romero Florez"
+date: "2023-12-16"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fourPNO)
+```
+
+# Question 1
+
+```{r}
+file <- "http://www.stat.duke.edu/~pdh10/FCBS/Exercises/interexp.dat"
+Data <- read.table(file=file, header=T)
+rm(file)
+```
+
+## a)
+
+```{r}
+Data_complete <- na.omit(Data)
+
+# run Gibbs
+# Set up priors
+ybar <- colMeans(Data_complete) # sample means
+Lambda0 <- cov(Data_complete) # sample covariance
+nu.0 <- 2 + 2 #p + 2
+S.0 <- Lambda0
+p <- dim(Data_complete)[2]
+n <- dim(Data_complete)[1]
+Cov.y <- cov(Data_complete)
+
+
+# Gibbs sampling
+S <- 10000
+mu.0 <- ybar;  Sigma <- S.0;  # Initial values 
+
+# Calculations that will be used repeatedly 
+Lambda0.inv <- solve(Lambda0) 
+Lam.inv.mu.0 <- Lambda0.inv %*% mu.0 
+nu.n <- nu.0 + n 
+
+# Now generate the Markov chain!  mu and Sigma 
+mu.chain <- matrix(NA, S, p)
+Sigma.chain <- matrix(NA, S, p^2) 
+
+for(s in 1:S)
+{
+ n.Sigma.inv <- n * solve(Sigma) 
+ Lambda.n <- solve( Lambda0.inv + n.Sigma.inv )
+ mu.n <- Lambda.n %*% (Lam.inv.mu.0 + n.Sigma.inv %*% ybar) 
+ mu <- rmvnorm(1, mu.n, Lambda.n)[1,]
+ S.n <- S.0 + (n-1)*Cov.y + n * (ybar-mu) %*% t(ybar-mu)  
+ Sigma <- solve( rWishart(1, nu.n, solve(S.n))[,,1] ) 
+ mu.chain[s,] <- mu 
+ Sigma.chain[s,] <- Sigma 
+}
+
+
+# Posterior expectation
+post.exp1 <- colMeans(mu.chain)
+post.exp1
+
+# 90% Posterior CI for mu_b - mu_a
+quant.1 <- quantile((mu.chain[,2]-mu.chain[,1]), probs = c(0.5, 0.95))
+quant.1
+```
+
+## b)
+
+```{r}
+# calculating empirical estimates
+mu_a <- mean(Data$yA, na.rm = T)
+sd_a <- sd(Data$yA, na.rm = T)
+mu_b <- mean(Data$yB, na.rm = T)
+sd_b <- sd(Data$yB, na.rm = T)
+rho <- cor(Data_complete$yA, Data_complete$yB)
+
+# now impute values as "real data"
+
+for (b in 27:41) {
+  value <- mu_b + rho * (sd_b / sd_a) * (Data$yA[b] - mu_a)
+  Data$yB[b] <- value
+}
+
+for (a in 42:58) {
+  value <- mu_a + rho * (sd_a / sd_b) * (Data$yB[a] - mu_b)
+  Data$yA[a] <- value
+}
+
+# now I have a complete dataset!
+
+# now, run Gibbs
+
+# Set up priors
+ybar <- colMeans(Data) # sample means
+Lambda0 <- cov(Data) # sample covariance
+nu.0 <- 2 + 2 #p + 2
+S.0 <- Lambda0
+p <- dim(Data)[2]
+n <- dim(Data)[1]
+Cov.y <- cov(Data)
+
+# Gibbs sampling
+S <- 5000
+mu.0 <- ybar;  Sigma <- S.0;  # Initial values 
+
+# Calculations that will be used repeatedly 
+Lambda0.inv <- solve(Lambda0) 
+Lam.inv.mu.0 <- Lambda0.inv %*% mu.0 
+nu.n <- nu.0 + n 
+
+# Now generate the Markov chain!  mu and Sigma 
+mu.chain <- matrix(NA, S, p)
+Sigma.chain <- matrix(NA, S, p^2) 
+
+for(s in 1:S)
+{
+ n.Sigma.inv <- n * solve(Sigma) 
+ Lambda.n <- solve( Lambda0.inv + n.Sigma.inv )
+ mu.n <- Lambda.n %*% (Lam.inv.mu.0 + n.Sigma.inv %*% ybar) 
+ mu <- rmvnorm(1, mu.n, Lambda.n)[1,]
+ S.n <- S.0 + (n-1)*Cov.y + n * (ybar-mu) %*% t(ybar-mu)  
+ Sigma <- solve( rWishart(1, nu.n, solve(S.n))[,,1] ) 
+ mu.chain[s,] <- mu 
+ Sigma.chain[s,] <- Sigma 
+}
+
+
+# Posterior expectation
+post.exp2 <- colMeans(mu.chain)
+post.exp2
+
+# 90% Posterior CI for mu_b - mu_a
+quant.2 <- quantile((mu.chain[,2]-mu.chain[,1]), probs = c(0.5, 0.95))
+quant.2
+```
+
+## c
+
+Now, with imputation done correctly
+
+```{r}
+# Input: 
+
+# Data matrix y, with missing values indicated by NA 
+
+# Parameters for semiconjugate prior given multivariate normal 
+#  sampling model:  mu.0,  Lam.0,  S.0,  nu.0.   
+
+# Starting value for Gibbs sampler:  mu and Sigma 
+
+# Desired chain length S 
+
+
+# Output: An (S x p) matrix mu.chain, and an (S x p^2) matrix 
+#  Sigma.chain, containing posterior simulations 
+
+
+file <- "http://www.stat.duke.edu/~pdh10/FCBS/Exercises/interexp.dat"
+y <- as.matrix(read.table(file=file, header=T))
+rm(file)
+# Gibbs code: 
+
+# Set up priors
+ybar <- colMeans(y, na.rm = T) # sample means
+Lam.0 <- cov(Data_complete) # sample covariance
+nu.0 <- 2 + 2 #p + 2
+S.0 <- Lambda0
+Cov.y <- cov(Data_complete)
+
+n <- dim(y)[1];  p <- dim(y)[2]; 
+I <- !is.na(y) # inclusion matrix (1 for observed, 0 for missing) 
+
+y.hat <- y  
+
+Lam0.inv <- solve(Lam.0); 
+
+mu.chain <- matrix(NA, S, p)
+
+Sigma.chain <- matrix(NA, S, p^2)
+
+for(s in 1:S)
+{
+ ### 
+ # Impute missing data first 
+ ### 
+ for(i in 1:n){ 
+  b <- ( I[i,]==0 );  if(any(b)){ 
+  a <- ( I[i,]==1 ) 
+  inv.Sa <- solve(Sigma[a,a])  
+  Sigma.j <- Sigma[b,b] - Sigma[b,a] %*% inv.Sa %*% Sigma[a,b] 
+  mu.j <- mu[b] + Sigma[b,a] %*% inv.Sa %*% (t(y.hat[i,a])-mu[a]) 
+  y.hat[i,b] <- rmvnorm(1, mu.j, Sigma.j) } }
+ ### 
+ # Update mu and Sigma in the usual way, using y.hat as 'data' 
+ ### 
+ # First update mu 
+ ###
+ ybar <- apply(y.hat, 2, mean) 
+ Cov.y <- cov(y.hat) 
+ Sig.inv <- solve(Sigma) 
+ Lam.n <- solve( Lam0.inv + n * Sig.inv ) 
+ mu.n <- Lam.n %*% (Lam0.inv %*% mu.0 + n * Sig.inv %*% ybar) 
+ mu <- rmvnorm(1, mu.n, Lam.n)[1,]
+ ### 
+ # Now update Sigma 
+ ### 
+ Sig.n <- S.0 + (n-1) * Cov.y + n * (ybar-mu) %*% t(ybar-mu) 
+ Sigma <- solve( rWishart(1, nu.0+n, solve(Sig.n))[,,1] ) 
+ ### 
+ # Save results 
+ ### 
+ mu.chain[s,] <- mu
+ Sigma.chain[s,] <- Sigma 
+}
+
+# Posterior expectation
+post.exp3 <- colMeans(mu.chain)
+post.exp3
+
+# 90% Posterior CI for mu_b - mu_a
+quant.3 <- quantile((mu.chain[,2]-mu.chain[,1]), probs = c(0.5, 0.95))
+quant.3
+```
+
+## d
+
+```{r}
+# Create a data frame for posterior expectations
+posterior_expectations <- data.frame(
+  Procedures = c("Procedure 1", "Procedure 2", "Procedure 3"),
+  muA = c(post.exp1[1], post.exp2[1], post.exp3[1]),
+  muB = c(post.exp1[2], post.exp2[2], post.exp3[2])
+)
+
+print(posterior_expectations)
+
+# Create a data frame for confidence intervals
+confidence_intervals <- data.frame(
+  Procedures = c("Procedure 1 (muB - muA)", "Procedure 2 (muB - muA)", 
+                 "Procedure 3 (muB - muA)"),
+  Lower_Bound = c(quant.1[1], quant.2[1], quant.3[1]),
+  Upper_Bound = c(quant.1[2], quant.2[2], quant.3[2])
+)
+
+print(confidence_intervals)
+rm(list = ls())
+
+```
+
+Comment: For all three procedures, the mean values remained fairly similar, as it can be seen above. It is interesting to see that the highest means are from (c), perhaps as we were simulating the missing values within the Gibbs sampler, they could attain higher values.
+
+With respect to the difference between the variables, they remained positive, indicating that with 95% probability $\mu_B > \mu_A$. This was consistent in all cases, with procedure 1 and 3 (a and c) having the highest upper bounds for the difference at 1.23 and 1.16 approximately. All had lower values of approximately 0.62.
+
+\pagebreak
+
+# Question 2
+
+```{r}
+file <- "http://www2.stat.duke.edu/~pdh10/FCBS/Exercises/pdensity.dat"
+Data <- read.table(file=file, header=T)
+rm(file)
+
+```
+
+
+## a)
+```{r}
+models <- lapply(split(Data, Data$plot), function(subset) {
+  lm(yield ~ density + I(density^2), data = subset)
+})
+
+# Display the summary of each model within groups
+summaries <- lapply(models, summary)
+summaries
+```
+
+### i)
+```{r}
+# Create an empty plot
+plot(1, type = "n", xlim = c(0, 10), ylim = c(3, 12), xlab = "Density", ylab = "Yield", main = "Regression Curves by Plot")
+
+# Plotting actual data points
+points(Data$density, Data$yield, col = "black", pch = 16)
+
+# Plotting fitted regression curves for each plot
+for (i in 1:length(models)) {
+  lines(Data$density[Data$plot == names(models)[i]], 
+        predict(models[[i]], data.frame(density = Data$density[Data$plot == names(models)[i]])), 
+        col = i, lwd = 2)
+}
+
+# Adding a legend for plots
+legend("topright", legend = names(models), col = 1:length(models), lwd = 2, title = "Plots")
+
+```
+## ii)
+
+```{r}
+# Extracting OLS coefficients from the fitted models
+coefficients_matrix <- sapply(models, coef)
+
+# Transposing the coefficients matrix for easier manipulation
+coefficients_matrix <- t(coefficients_matrix)
+
+# Calculating mean vector and covariance matrix of coefficients
+mean_coefs <- colMeans(coefficients_matrix)
+cov_coefs <- cov(coefficients_matrix)
+
+
+# Extracting residuals from the models
+residuals_list <- lapply(models, function(model) residuals(model))
+
+# Combine residuals from all groups
+all_residuals <- unlist(residuals_list)
+
+# Estimated overall variance
+sigma_squared_hat <- var(all_residuals)
+
+mean_coefs
+cov_coefs
+sigma_squared_hat
+
+```
+
+# b)
+
+```{r}
+ids <- sort(unique(Data$plot))
+m <- length(ids);  m;  # Number of plots is m = 10
+
+y <- list();  X <- list();  n <- NULL; 
+
+for(j in 1:m)
+{
+  y[[j]] <- Data[Data$plot == ids[j], 3] 
+  n[j] <- sum(Data$plot == ids[j]) 
+  x.j <- Data[Data$plot == ids[j], 2] 
+  x.j2 <- x.j * x.j
+  X[[j]] <- cbind(rep(1, n[j]), x.j, x.j2)
+}
+
+
+# Bayesian hierarchical linear regression model 
+
+# Set prior parameters here (unit information prior) 
+
+p <- 3
+
+mu.0 <- mean_coefs
+
+Lambda.0 <- cov_coefs
+
+S.0 <- cov_coefs;  eta.0 <- p + 2; 
+
+sigma2.0 <- sigma_squared_hat;  nu.0 <- 1;
+
+m <- length(models)
+
+
+# We will run the Gibbs sampler for 10,000 scans, but only save every 
+#  10th update 
+
+S <- 1000;  T <- 10; 
+
+sigma2.chain <- rep(NA, S);
+
+mu.chain <- matrix(NA, S, p) 
+
+Sigma.chain <- matrix(NA, S, p^2) 
+
+beta.chain <- matrix(NA, S, m*p) 
+
+
+# Compute inverse matrix once and not 10,000 times 
+
+Lambda0.inv <- solve(Lambda.0)
+
+Lambda.inv.mu.0 <- Lambda0.inv %*% mu.0 
+
+
+# Starting values for Gibbs sampler 
+
+mu <- mu.0;  sigma2 <- sigma2.0;  
+
+beta <- coefficients_matrix;   # beta is m x p 
+
+Sigma.inv <- solve(S.0); 
+
+
+# Now run it! 
+
+run.time <- proc.time() 
+
+for(s in 1:S)
+{
+ for(t in 1:T)
+ {
+  ### 
+  # Update the beta_j 
+  ### 
+  for(j in 1:m)
+  {
+   V.j <- solve( Sigma.inv + t(X[[j]]) %*% X[[j]] / sigma2 ) 
+   m.j <- V.j %*% ( Sigma.inv %*% mu + t(X[[j]]) %*% y[[j]] / sigma2 ) 
+   beta[j,] <- rmvnorm(1, mu=as.vector(m.j), sigma=V.j)[1,]
+  }
+  ### 
+  # Update mu 
+  ### 
+  Lambda.m <- solve( Lambda0.inv + m * Sigma.inv ) 
+  mu.m <- Lambda.m %*% (Lambda.inv.mu.0 + Sigma.inv %*% apply(beta,2,sum))
+  mu <- rmvnorm(1, mu=mu.m, sigma=Lambda.m)[1,] 
+  ### 
+  # Update Sigma matrix 
+  ### 
+  mu.mat <- matrix(mu, m, p, byrow=T) 
+  S.mu <- t(beta - mu.mat) %*% (beta - mu.mat) 
+  Sigma.inv <- rWishart(1, eta.0+m, solve(S.0 + S.mu))[,,1] 
+  ### 
+  # Update sigma2 
+  ### 
+  SSR <- 0
+  for(j in 1:m){ SSR <- SSR + sum( (y[[j]] - X[[j]] %*% beta[j,])^2 ) } 
+  sigma2 <- (nu.0*sigma2.0 + SSR) / rchisq(1, df=nu.0+sum(n))
+ } # End of t-loop; at every t-th scan we'll save the results 
+ sigma2.chain[s] <- sigma2; 
+ mu.chain[s,] <- mu 
+ Sigma.chain[s,] <- solve(Sigma.inv) 
+ for(j in 1:m){ beta.chain[s, seq(j, j+(p-1)*m, m)] <- beta[j,] }
+}
+
+# now, plots
+
+# Extract beta samples 
+beta1 = beta.chain[, 1:10] 
+beta2 = beta.chain[, 11:20]
+beta3 = beta.chain[, 21:30]
+
+# Combine into matrix  
+beta.mat <- cbind(beta1, beta2, beta3)
+beta.post <- colMeans(beta.mat)
+
+# Extract beta samples into matrix with 10 rows (groups) and 3 columns 
+beta.mat <- matrix(beta.post, ncol = 3, byrow = TRUE)
+
+# Set up x values to plot over  
+x <- seq(min(Data$density), max(Data$density), length.out = 100)
+
+# Plot curves
+par(mfrow = c(2,5))
+for(i in 1:10){
+  
+  # Predicted response for this group  
+  yhat <- beta.post[i] + beta.post[i+10]*x + beta.post[i+20]*x^2 
+  
+  # Predictions from frequentist LM
+  newdata <- data.frame(density = x)
+  yhat.lm <- predict(models[[i]], newdata)
+  
+  # Plot 
+  plot(Data$density[Data$plot==i], Data$y[Data$plot==i], 
+       xlab="Planting Density", ylab="Yield")
+  lines(x, yhat, col="red", lwd=2)
+  lines(x, yhat.lm, col="blue", lwd=2)
+  
+}
+
+```
+
+As we can see, the posterior distributions are similar to the prior distributions. However, in some cases, the difference is clear between the two. For example, in plot 2 we can see a big difference between the posterior in red and the prior in blue. The posterior has more information, so it unifies much more the curves in the posterior plots for all crops.
+
+## c)
+
+```{r}
+# Prior and posterior for mu
+par(mfrow=c(1,3))
+for(i in 1:3){
+
+  # Posterior  
+  den.post <- density(mu.chain[,i])
+  
+  # Prior 
+  mus <- seq(min(mu.chain[,i]), max(mu.chain[,i]), length.out=100)
+  d.prior <- dnorm(mus, mu.0[i], Lambda.0[i,i]) 
+  
+  # Plot 
+  plot(mus, d.prior, type="l", lwd=2, ylim=c(0, max(d.prior, den.post$y)), 
+       col="red")
+  lines(den.post, lwd=2)
+
+  abline(v=mu.0[i], col="red", lty="dotted")
+  legend("topright", legend=c("Prior", "Posterior"),
+       col=c("red", "blue"), lty=1, cex=0.8)
+}
+
+
+# Prior and posterior for sigma2
+# Sample values for x-axis 
+x = seq(min(sigma2.chain), max(sigma2.chain), length.out=1000)
+# Prior density
+y = sigma2.0 / (nu.0 / dchisq(x, df= nu.0))
+# Posterior density 
+den <- density(sigma2.chain)  
+
+# Plot
+plot(x, y, type="l", ylim = c(0, max(den$y)), lwd=2, col="red",
+     ylab="Density", xlab="sigma^2")
+lines(den, col="blue", lwd=2)
+# Add vertical lines
+abline(v = sigma2.0, lty="dotted", col="red")
+abline(v = mean(sigma2.chain), lty="dotted", col="blue")
+legend("topright", legend=c("Prior", "Posterior"),
+       col=c("red", "blue"), lty=1, cex=0.8)
+```
+
+## d)
+
+### i)
+
+```{r}
+
+#given that all betas are next to each other in my beta chain
+#i will rbind all beta2 and beta3 values
+beta.1.post <- rbind(beta.chain[,1:10])
+beta.2.post <- rbind(beta.chain[,11:20])
+beta.3.post <- rbind(beta.chain[,21:30])
+
+#length should be 10,000 since we are taking into account all plots
+length(beta.2.post)
+
+# calculate the max
+x.stat <- -beta.2.post / (2 * beta.3.post)
+
+plot(density(x.stat), main = "Density for x.stat", xlim = c(2,10))
+
+#ci
+quantile(x.stat, probs = c(.025, .975))
+```
+
+### ii)
+
+```{r}
+# Compute density  
+density.xstat <- density(x.stat)  
+
+# Mode is value at maximum density
+mode <- density.xstat$x[which.max(density.xstat$y)]
+paste0("The maximum value is located at x = ", mode)
+```
+
+### iii)
+
+```{r}
+yield.ppd <- beta.1.post + beta.2.post * mode + beta.3.post * mode^2
+plot(density(yield.ppd), main = "Density for yield of x.max", xlim = c(6,10))
+```
+
+
+From the analysis of the optimal plotting density we learned that it was around 6. This is based on our prior belief and our observations, even though in this case our prior belief was informed by our observations!
+
+From the prediction interval for the yield, we learned that it would most likely be between 7 to 9. This again follows from our analysis of the beta coefficients. This result is derived from an analysis of the pooled coefficients for all plots.
+
+\pagebreak
+
+# Question 3
+
+## a)
+
+```{r}
+rm(list=ls())
+library(rstan)
+library(mcmcse)
+library(coda)
+
+file <- "http://www2.stat.duke.edu/~pdh10/FCBS/Exercises/msparrownest.dat"
+Data <- read.table(file=file, header=T)
+rm(file)
+colnames(Data) <- c("y", "x")
+y <- Data$y
+x <- Data$x
+
+stan_model <- "
+ data{
+  int<lower=0> n;
+  int<lower=0, upper=1> y[n];
+  vector[n] x; }
+ parameters{
+  real alpha;
+  real beta;   }
+ model{
+  alpha ~ normal(0,10);
+  beta  ~ normal(0, 2);
+  y ~ bernoulli_logit(alpha + beta*x); } "
+
+
+fit_stan <- stan(model_code=stan_model,
+  data=list(n=length(y), y=y, x=x),
+  chains=1, iter=11000, warmup=1000)
+alpha.sim <- extract(fit_stan)$alpha
+beta.sims <- extract(fit_stan)$beta
+
+#lets look at the acf plots
+par(mfrow=c(1,2))
+acf(alpha.sim, lag.max = 10)
+acf(beta.sims, lag.max = 10)
+
+# it looks almost uncorrelated!! effective sample sizes should be 
+# 10,000 or close
+ess(as.matrix(alpha.sim))
+ess(as.matrix(beta.sims))
+
+
+# now plot trace plot and density for alpha
+par(mfrow=c(1,2))
+ts.plot(alpha.sim)
+plot(density(alpha.sim))
+
+# now plot trace plot and density for beta
+par(mfrow=c(1,2))
+ts.plot(beta.sims)
+plot(density(beta.sims))
+
+```
+
+## b)
+
+```{r}
+x <- seq(-20, 20, .001)
+y <- dnorm(x, 0, sd = 10)
+y2 <- dnorm(x, 0, sd = 2)
+
+# now plot prior and posterior of both
+par(mfrow=c(1,2))
+plot(x,y, type="l", col = "red", ylim = c(0, .10),
+     xlab = "alpha", ylab = "density", main = "Alpha density")
+lines(density(alpha.sim), col="blue")
+legend("topright", legend=c("Prior", "Posterior"),
+       col=c("red", "blue"), lty=1, cex=0.8)
+
+plot(x,y2, type="l", col = "red", ylim = c(0, 1.5), xlim = c(-6, 6),
+     xlab = "alpha", ylab = "density", main = "Beta density")
+lines(density(beta.sims), col="blue")
+legend("topright", legend=c("Prior", "Posterior"),
+       col=c("red", "blue"), lty=1, cex=0.8)
+
+```
+
+## c)
+
+```{r}
+# Define function 
+f = function(alpha, beta, x) {
+  exp(alpha + beta*x) / (1 + exp(alpha + beta*x))
+}
+
+# Get data
+x <- Data$x
+
+# Initialize matrix of predictions
+n_x <- length(x)
+n_sim <- length(alpha.sim)
+f_preds <- matrix(NA, n_x, n_sim)
+
+# Populate prediction matrix
+for(i in 1:n_sim){
+  for(j in 1:n_x){
+    f_preds[j, i] <- f(alpha.sim[i], beta.sims[i], x[j])  
+  }
+}
+    
+# Compute confidence interval bounds  
+lower <- apply(f_preds, 1, quantile, 0.05)
+upper <- apply(f_preds, 1, quantile, 0.95)
+
+# Plot     
+plot(sort(x), sort(lower), type="l", ylim = c(0,1),
+     xlab = "Wingspan", ylab = "f(alpha, beta, x)",
+     main = "90% Confidence Band") 
+lines(sort(x), sort(upper), col="red", type = "l")
+legend("topleft", legend=c("Lower Bound", "Upper Bound"),
+       col=c("black", "red"), lty=1, cex=0.8)
+
+```
+
+In this model, the confidence band represents the probability of a male sparrow nesting given its wingspan. This allow us to do inference using our MCMC output and simulating possible probabilities of male sparrows nesting!
